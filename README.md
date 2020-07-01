@@ -1,6 +1,6 @@
 # Data and analysis code from "Beyond accuracy: quantifying trial-by-trial behaviour of CNNs and humans by measuring error consistency"
 
-Error consistency is a quantitative analysis for measuring whether two decision making systems systematically make errors on the same inputs.
+Error consistency is a quantitative analysis for measuring whether two decision making systems systematically make errors on the same inputs. The paper is available on [arXiv](https://arxiv.org/abs/2006.16736).
 
 ## dependencies
 The R analysis scripts have the following dependencies which can be installed via ``install.packages("package-name")``. Data analysis was performed using R version `3.5.1`.
