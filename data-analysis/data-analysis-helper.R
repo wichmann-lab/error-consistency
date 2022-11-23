@@ -12,14 +12,14 @@ library(jpeg)
 library(R.matlab)
 library(graphics)
 library(pROC)
-library(psych)
+#library(psych)
 library(viridis)
 library(grid)
 library(gridExtra)
 library(stats)
 library(png)
 library(pBrackets)
-library(PET)
+#library(PET)
 library(TeachingDemos)
 library(binom)
 library(RColorBrewer)
@@ -97,6 +97,32 @@ cornet.S = list(name="CORnet-S",
                 pch=21,
                 data.name="cornet-s")
 
+simclr.x1 = list(name="simclr.x1",
+                 color="#32414B",
+                 pch=21,
+                 data.name="simclr-resnet50x1")
+simclr.x2 = list(name="simclr.x2",
+                 color="#32414B",
+                 pch=21,
+                 data.name="simclr-resnet50x2")
+simclr.x4 = list(name="simclr.x4",
+                 color="#32414B",
+                 pch=21,
+                 data.name="simclr-resnet50x4")
+resnet.SIN = list(name="ResNet-50 (SIN)",
+                  color="#32414B",
+                  pch=21,
+                  data.name="resnet50-trained-on-SIN")
+resnet.SIN.IN = list(name="ResNet-50 (SIN+IN)",
+                     color="#D29600",
+                     pch=21,
+                     data.name="resnet50-trained-on-SIN-and-IN")
+resnet.SIN.IN.ft.IN = list(name="ResNet-50 (SIN+IN+ft-IN)",
+                           color="#238b45",
+                           pch=21,
+                           data.name="resnet50-trained-on-SIN-and-IN-then-finetuned-on-IN")
+
+
 ###################################################################
 #               some more general definitions
 ###################################################################
@@ -122,7 +148,7 @@ human.avg = list(name="participants (avg.)",
 
 image.categories = list()
 for(cat in CATEGORIES) {
-    image.categories[[cat]] = readPNG(paste("category-images-for-plotting/",
+  image.categories[[cat]] = readPNG(paste("category-images-for-plotting/",
                                           cat, ".png", sep=""))
 }
 
@@ -180,7 +206,6 @@ get.consistency.lower.bound = function(c.exp) {
   return(sqrt(2.0*c.exp-1))
 }
 
-
 consistency.analysis = function(dat, obs1, obs2) {
   # Return data frame with consistency results for obs1 x obs2
   
@@ -217,8 +242,9 @@ consistency.analysis = function(dat, obs1, obs2) {
   if(observed.consistency==1.0) {
     cohens.kappa = 1.0
   } else {
-    estimate = cohen.kappa(x=cbind(dat1$is.correct, dat2$is.correct))
-    cohens.kappa = estimate$kappa
+    #estimate = cohen.kappa(x=cbind(dat1$is.correct, dat2$is.correct))
+    #cohens.kappa = estimate$kappa
+    cohens.kappa = (observed.consistency-expected.consistency) / (1.0-expected.consistency)
   }
   
   return(data.frame(expected.consistency=expected.consistency,
@@ -258,6 +284,7 @@ plot.consistency.vs.acc = function(dat,
                                    xlab="",
                                    x.pos.text.label=NULL,
                                    plot.average.CI=TRUE,
+                                   add.human.plus.minus.result = TRUE,
                                    verbose=FALSE,
                                    ...) {
   # Plot consistency as a function of a value (e.g. accuracy)
@@ -339,7 +366,7 @@ plot.consistency.vs.acc = function(dat,
   for(cnn in PLOT.SUBJECTS) {
     for(subj1 in unique(dat[dat$is.human==TRUE, ]$subj)) {
       if(!cnn$data.name %in% unique(x.axis.dataset$model.name)) {
-        stop(paste("Unknown value for model ", cnn$data.name, sep=""))
+        stop(paste("Unknown value (e.g. ImageNet accuracy) for model ", cnn$data.name, sep=""))
       }
       x = x.axis.dataset[x.axis.dataset$model.name==cnn$data.name, x.value]
       consistency = consistency.analysis(dat, obs1=subj1, obs2 = cnn$data.name)
@@ -388,9 +415,16 @@ plot.consistency.vs.acc = function(dat,
   # horizontal lines and regression line for humans vs. CNNs
   abline(reg1, lty=2, lwd=1.5)
   abline(h=human.avg.consistency, lty=2, col=human.100, lwd=3)
+  
+  if(add.human.plus.minus.result) {
+    plus.minus.result = paste(" \u00B1 ", as.character(round(human.mean.kappa.stats$sample.CI.width.one.side, 2)), sep="")
+  } else {
+    plus.minus.result = ""
+  }
+  
   text(x=mean(x.range), y=human.avg.consistency, col=human.100, pos=3,
        labels=c(paste("humans vs. humans: ", as.character(round(human.avg.consistency, 2)),
-                      " \u00B1 ", as.character(round(human.mean.kappa.stats$sample.CI.width.one.side, 2)), sep="")))
+                      plus.minus.result, sep="")))
   abline(h=cnn.avg.consistency, lty=2, col=gold.100, lwd=3)
   text(x=mean(x.range), y=cnn.avg.consistency, col=gold.100, pos=3,
        labels=c(paste("CNN vs. CNNs: ", as.character(round(cnn.avg.consistency, 2)),
@@ -856,7 +890,7 @@ plot.performance = function(dat, logarithmic.scale=FALSE,
   axis(side=1, at=ticks, cex.axis=cex.axis)
   
   subjects = get.all.subjects(dat, avg.human.data)
-
+  
   for(s in subjects) {
     
     if((!(s$data.name == HUMAN.DATA.NAME)) | (!avg.human.data)) {
@@ -1098,6 +1132,128 @@ plot.shape.bias = function(dat, x.is.content=TRUE,
   }
 }
 
+
+plot.confusion = function(confusion, 
+                          experiment.name,
+                          subject=NULL,
+                          main=NULL,
+                          plot.accuracies=TRUE,
+                          plot.x.y.labels=TRUE,
+                          plot.scale = TRUE,
+                          network.name=NULL) {
+  # Plot confusion matrix
+  
+  subject.title = ifelse(is.null(subject), "- all subjects", get.matching.name(subject))
+  
+  g = geom_tile(aes(x=category, y=object_response, fill=Percent),
+                data=confusion, color="black", size=0.1)
+  
+  tile <- ggplot() + g +
+    labs(x="presented category",y="response") + 
+    if(is.null(main)) {
+      ggtitle(paste("Confusion matrix", experiment.name, subject.title)) 
+    } else {
+      ggtitle(main)
+    }
+  
+  # print accuracy in box; fill gradient
+  if(plot.accuracies) {
+    tile = tile + 
+      geom_text(aes(x=category, y=object_response, label=sprintf("%.1f", Percent)),
+                data=confusion, size=5, colour="black")
+  }
+  
+  tile = tile +
+    if(!is.null(confusion$z)) {
+      if(is.null(network.name)) {
+        stop("no network name, but confusion$z exists -> which color to use?")
+      }
+      
+      net.cols = NULL
+      if(network.name == "vgg") {
+        net.cols = vgg.cols
+      } else if (network.name == "alexnet") {
+        net.cols = alexnet.cols
+      } else if (network.name == "googlenet") {
+        net.cols = googlenet.cols
+      }
+      scale_fill_manual(values = c("0" = rgb(230, 230, 230, maxColorValue = 255),
+                                   human.cols, net.cols))
+    } else {
+      if(plot.scale) {
+        scale_fill_gradient(low=rgb(250, 250, 250, maxColorValue = 255),
+                            high=human.100)
+      } else {
+        scale_fill_gradient(low=rgb(250, 250, 250, maxColorValue = 255),
+                            high=human.100, guide=FALSE)
+      }
+    }
+  
+  # diagonal
+  tile = tile + 
+    geom_tile(aes(x=category, y=object_response),
+              data=subset(confusion, as.character(category)==as.character(object_response)),
+              color="black",size=0.3, fill="black", alpha=0) 
+  if(! plot.x.y.labels) {
+    tile = tile +
+      theme(axis.title.x=element_blank(),
+            axis.text.x=element_blank(),
+            axis.ticks.x=element_blank(),
+            axis.title.y=element_blank(),
+            axis.text.y=element_blank(),
+            axis.ticks.y=element_blank())
+  }
+  return(tile)
+}
+
+
+get.confusion = function(dat, subject=NULL,
+                         net.dat=NULL, human.dat=NULL) {
+  # Sure you want to get confused? ;)
+  # Return all data necessary to plot confusion matrix.
+  
+  if(is.null(subject)) {
+    d = data.frame(dat$category,
+                   dat$object_response)
+  } else {
+    d = data.frame(dat[dat$subj==subject, ]$category,
+                   dat[dat$subj==subject, ]$object_response)
+  }
+  
+  names(d) = c("category", "object_response") 
+  
+  category = as.data.frame(table(d$category))
+  names(category) = c("category","CategoryFreq")
+  
+  confusion = as.data.frame(table(d$category, d$object_response))
+  names(confusion) = c("category", "object_response", "Freq")
+  
+  confusion = merge(confusion, category, by=c("category"))
+  confusion$Percent = confusion$Freq/confusion$CategoryFreq*100
+  
+  # make sure the order is correct, with 'na' in the end
+  for(f in rev(c("airplane", "bear", "bicycle", "bird", "boat", "bottle",
+                 "car", "cat", "chair", "clock", "dog", "elephant",
+                 "keyboard", "knife", "oven", "truck", "na"))) {
+    if(f %in% levels(confusion$object_response)) {
+      # TODO this is less than perfect, as it excludes some categories
+      confusion$object_response <- relevel(confusion$object_response, f)
+    }
+  }
+  
+  return(confusion)
+}
+
+
+confusion.matrix = function(dat, subject=NULL, main=NULL, plot.scale=TRUE,
+                            plot.x.y.labels=TRUE) {
+  #Plot confusion matrix either for all or for a specific subject
+  
+  confusion = get.confusion(dat, subject)
+  return(plot.confusion(confusion, unique(dat$experiment.name), subject,
+                        main=main, plot.scale=plot.scale,
+                        plot.x.y.labels = plot.x.y.labels))
+}
 
 ###################################################################
 #               Helper functions
@@ -1564,3 +1720,13 @@ crop.pdfs = function(dir.path) {
     }
   }
 }
+
+
+
+
+
+
+
+
+
+

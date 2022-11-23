@@ -39,6 +39,39 @@ e10dat = get.eidolon.dat.preprocessed(eidolondat, 10)
 BrainScore = get.brainscore.data(paste(DATAPATH, "brain-score_metrics/", "brainscore_metrics.csv", sep=""))
 
 ###################################################################
+#    PREPROCESSING COLOUR EXPERIMENT
+###################################################################
+
+cdat = get.expt.data("noise-generalisation_colour")
+colordat = cdat
+
+length(intersect(cdat[cdat$subj=="subject-01", ]$image.id, cdat[cdat$subj=="subject-02", ]$image.id))#46
+length(intersect(cdat[cdat$subj=="subject-01", ]$image.id, cdat[cdat$subj=="subject-03", ]$image.id))#46
+length(intersect(cdat[cdat$subj=="subject-02", ]$image.id, cdat[cdat$subj=="subject-03", ]$image.id))#1280
+# subject-02 and subject-03 have seen identical stimuli
+
+colordatcr = cdat[cdat$condition=="cr", ]
+colordatbw = cdat[cdat$condition=="bw", ]
+
+# remove subject-01 from analysis
+cdat = colordatcr[colordatcr$subj!="subject-01", ]
+
+acc = c()
+for(subj in unique(colordatcr$subj)) {
+  print(paste(subj, get.single.accuracy(colordatcr[colordatcr$subj==subj, ])))
+  acc = c(acc, get.single.accuracy(colordatcr[colordatcr$subj==subj, ]))
+}
+range(acc)
+mean(acc)
+sd(acc)
+
+# min human: 0.8734375, max human: 0.89375
+# min CNN: 0.9171875 (Squeezenet1-0), max CNN: 0.9921875 (DenseNet-201 as well as ResNet-152)
+
+colordatcr = colordatcr[colordatcr$subj!="subject-01", ]
+colordatbw = colordatbw[colordatbw$subj!="subject-01", ]
+
+###################################################################
 #    PRINT NUMBERS REPORTED IN PAPER
 ###################################################################
 
@@ -91,6 +124,44 @@ plot.consistency.vs.acc(edgedat, x.value="top.5")
 plot.consistency.vs.acc(sildat, x.value="top.5")
 # Multiple R-squared:  0.253,	Adjusted R-squared:  0.2483 
 # F-statistic: 53.53 on 1 and 158 DF,  p-value: 1.21e-11
+
+plot.consistency.vs.acc(colordatcr, x.value="top.5")
+# Multiple R-squared:  0.2139,	Adjusted R-squared:  0.1877 
+# F-statistic: 8.162 on 1 and 30 DF,  p-value: 0.007699
+
+# Error consistency of SIN-trained networks
+get.single.accuracy(cueconfdat[cueconfdat$subj=="resnet50", ])
+get.single.accuracy(cueconfdat[cueconfdat$subj=="resnet50-trained-on-SIN", ])
+get.single.accuracy(cueconfdat[cueconfdat$subj=="resnet50-trained-on-SIN-and-IN", ])
+get.single.accuracy(cueconfdat[cueconfdat$subj=="resnet50-trained-on-SIN-and-IN-then-finetuned-on-IN", ])
+
+PLOT.SUBJECTS = list(resnet, resnet.SIN, resnet.SIN.IN, resnet.SIN.IN.ft.IN)
+plot.consistency(cueconfdat, method="kappa")
+plot.consistency(cueconfdat, method="consistency")
+
+PLOT.SUBJECTS = list(resnet)
+plot.consistency(cueconfdat, method="kappa", verbose=TRUE)
+# [1] "avg CNN-human consistency: 0.068"
+# shape bias: 21.39%
+
+PLOT.SUBJECTS = list(resnet.SIN.IN.ft.IN)
+plot.consistency(cueconfdat, method="kappa", verbose=TRUE)
+# "avg CNN-human consistency: 0.066"
+# shape bias: 20.54%
+
+PLOT.SUBJECTS = list(resnet.SIN.IN)
+plot.consistency(cueconfdat, method="kappa", verbose=TRUE)
+# "avg CNN-human consistency: 0.098"
+# shape bias: 34.65%
+
+PLOT.SUBJECTS = list(resnet.SIN)
+plot.consistency(cueconfdat, method="kappa", verbose=TRUE)
+# "avg CNN-human consistency: 0.195"
+# shape bias: 81.37%
+
+cor(c(0.068, 0.066, 0.098, 0.195), c(21.39, 20.54, 34.65, 81.37))
+# [1] 0.9998646
+
 
 ###################################################################
 #    PRINT ACCURACIES TO TABLE
@@ -159,6 +230,13 @@ custom.mar = c(5.1, 5.1, 4.1, 2.1)
 plot.observer.range = TRUE
 width=6.0
 height=5.0
+
+PLOT.SUBJECTS = subject.factory(cueconfdat, PYTORCH.MODELS, distinguish.model.families = TRUE)
+
+PLOT.SUBJECTS = list(resnet, cornet.S)
+
+#PLOT.SUBJECTS = list(resnet, simclr.x1, simclr.x2, simclr.x4)
+
 
 # condition 'Inf' is excluded here
 pdf(file=paste(FIGUREPATH,"noise-generalisation_high-pass/noise-generalisation_high-pass_accuracy.pdf", sep=""), 
@@ -274,7 +352,7 @@ dev.off()
 #    PLOT ERROR CONSISTENCY ANALYSES
 ###################################################################
 
-DATASET.LIST = list(edgedat, sildat, cueconfdat)
+DATASET.LIST = list(colordatcr, edgedat, sildat, cueconfdat)
 
 figure.width = 5.0
 figure.height = 5.0
@@ -290,33 +368,47 @@ for(dataset in DATASET.LIST) {
     dir.create(dataset.path)
     print(paste("creating directory ", dataset.path, sep=""))
   }
+  
+  # confusion matrices
+  for(s in list("resnet50", "cornet-s")) {
+    pdf(file=paste(dataset.path, "/", dataset.name, "_confusion_", s, ".pdf", sep=""), 
+        width=10.6, 
+        height=10)
+    print(confusion.matrix(dataset[dataset$subj==s, ], main=""))
+    dev.off()
+  }
+  pdf(file=paste(dataset.path, "/", dataset.name, "_confusion_human-average.pdf", sep=""), 
+      width=10.6, 
+      height=10)
+  print(confusion.matrix(dataset[dataset$is.human==TRUE, ], main=""))
+  dev.off()
+  
+  
   for(method in c("consistency", "kappa")) {
-    pdf(file=paste(dataset.path, "/", dataset.name, "_", method, "_four_networks.pdf", sep=""), 
-        width=figure.width, 
-        height=figure.height)
-    PLOT.SUBJECTS = list(alexnet, vgg, googlenet, resnet)
-    plot.consistency(dataset, method=method, legend.cex=0.9, distinguish.model.families = FALSE,
-                     plot.bound=FALSE,
-                     plot.legend=(method!="consistency"))
-    dev.off()
-    
-    pdf(file=paste(dataset.path, "/", dataset.name, "_", method, "_all_pytorch_models.pdf", sep=""), 
-        width=figure.width, 
-        height=figure.height)
-    PLOT.SUBJECTS = subject.factory(dataset, PYTORCH.MODELS, distinguish.model.families = TRUE)
-    if(method=="consistency") {
-      plot.consistency(dataset, method=method, plot.legend = FALSE, distinguish.model.families = TRUE)
-    } else {
-      plot.consistency(dataset, method=method, distinguish.model.families = TRUE)
+    if(dataset.name != "noise-generalisation_colour") { # no CI for colour data
+      pdf(file=paste(dataset.path, "/", dataset.name, "_", method, "_four_networks.pdf", sep=""), 
+          width=figure.width, 
+          height=figure.height)
+      PLOT.SUBJECTS = list(alexnet, vgg, googlenet, resnet)
+      plot.consistency(dataset, method=method, legend.cex=0.9, distinguish.model.families = FALSE,
+                       plot.bound=FALSE,
+                       plot.legend=(method!="consistency"))
+      dev.off()
+      
+      pdf(file=paste(dataset.path, "/", dataset.name, "_", method, "_all_pytorch_models.pdf", sep=""), 
+          width=figure.width, 
+          height=figure.height)
+      PLOT.SUBJECTS = subject.factory(dataset, PYTORCH.MODELS, distinguish.model.families = TRUE)
+      plot.consistency(dataset, method=method, plot.legend = method!="consistency", distinguish.model.families = TRUE)
+      dev.off()
+      
+      pdf(file=paste(dataset.path, "/", dataset.name, "_", method, "_cornet_S.pdf", sep=""), 
+          width=figure.width, 
+          height=figure.height)
+      PLOT.SUBJECTS = list(resnet, cornet.S)
+      plot.consistency(dataset, method=method, legend.cex=1.0, points.cex=1.2)
+      dev.off()
     }
-    dev.off()
-    
-    pdf(file=paste(dataset.path, "/", dataset.name, "_", method, "_cornet_S.pdf", sep=""), 
-        width=figure.width, 
-        height=figure.height)
-    PLOT.SUBJECTS = list(resnet, cornet.S)
-    plot.consistency(dataset, method=method, legend.cex=1.0, points.cex=1.2)
-    dev.off()
   }
   for(top in c("top.1", "top.5")) {
     pdf(file=paste(dataset.path, "/", dataset.name, "_kappa_vs_", top, "_accuracy.pdf", sep=""), 
@@ -324,7 +416,8 @@ for(dataset in DATASET.LIST) {
         height=figure.height)
     PLOT.SUBJECTS = subject.factory(dataset, PYTORCH.MODELS, distinguish.model.families = TRUE)
     plot.consistency.vs.acc(dataset, x.value=top, plot.special.legend=dataset.name=="texture-shape_cue-conflict",
-                            plot.names=FALSE, y.axis.max.value=0.69)
+                            plot.names=FALSE, y.axis.max.value=0.69,
+                            add.human.plus.minus.result=dataset.name!="noise-generalisation_colour")
     dev.off()
     
     
@@ -333,7 +426,8 @@ for(dataset in DATASET.LIST) {
         height=figure.height)
     PLOT.SUBJECTS = list(alexnet, vgg, googlenet, resnet)
     plot.consistency.vs.acc(dataset, x.value=top,
-                            plot.names=FALSE, plot.average.CI=FALSE)
+                            plot.names=FALSE, plot.average.CI=FALSE,
+                            add.human.plus.minus.result=dataset.name!="noise-generalisation_colour")
     dev.off()
   }
   
@@ -345,7 +439,8 @@ for(dataset in DATASET.LIST) {
   plot.consistency.vs.acc(dataset, x.value="avg", plot.names=FALSE,
                           x.axis.dataset = BrainScore, xlab="Brain-Score: 'average' score",
                           x.range=c(0.28, 0.4), x.pos.text.label=0.385,
-                          y.axis.max.value=0.69)
+                          y.axis.max.value=0.69,
+                          add.human.plus.minus.result=dataset.name!="noise-generalisation_colour")
   dev.off()
   
   pdf(file=paste(dataset.path, "/", dataset.name, "_kappa_vs_", "BrainScore_behaviour.pdf", sep=""), 
@@ -354,7 +449,8 @@ for(dataset in DATASET.LIST) {
   plot.consistency.vs.acc(dataset, x.value="behaviour", plot.names=FALSE,
                           x.axis.dataset = BrainScore, x.range = c(0.25, 0.6),
                           xlab="Brain-Score: 'behaviour' score", x.pos.text.label=0.415,
-                          y.axis.max.value=0.69)
+                          y.axis.max.value=0.69,
+                          add.human.plus.minus.result=dataset.name!="noise-generalisation_colour")
   dev.off()
   
   pdf(file=paste(dataset.path, "/", dataset.name, "_kappa_vs_", "BrainScore_V1.pdf", sep=""), 
@@ -363,7 +459,8 @@ for(dataset in DATASET.LIST) {
   plot.consistency.vs.acc(dataset, x.value="V1", plot.names=FALSE,
                           x.axis.dataset = BrainScore, x.range = c(0.16, 0.25),
                           xlab="Brain-Score: 'V1' score", x.pos.text.label=0.233,
-                          y.axis.max.value=0.69)
+                          y.axis.max.value=0.69,
+                          add.human.plus.minus.result=dataset.name!="noise-generalisation_colour")
   dev.off()
   
   pdf(file=paste(dataset.path, "/", dataset.name, "_kappa_vs_", "BrainScore_V2.pdf", sep=""), 
@@ -372,7 +469,8 @@ for(dataset in DATASET.LIST) {
   plot.consistency.vs.acc(dataset, x.value="V2", plot.names=FALSE,
                           x.axis.dataset = BrainScore, x.range = c(0.22, 0.3),
                           xlab="Brain-Score: 'V2' score", x.pos.text.label=0.24,
-                          y.axis.max.value=0.69)
+                          y.axis.max.value=0.69,
+                          add.human.plus.minus.result=dataset.name!="noise-generalisation_colour")
   dev.off()
   
   pdf(file=paste(dataset.path, "/", dataset.name, "_kappa_vs_", "BrainScore_V4.pdf", sep=""), 
@@ -381,7 +479,8 @@ for(dataset in DATASET.LIST) {
   plot.consistency.vs.acc(dataset, x.value="V4", plot.names=FALSE,
                           x.axis.dataset = BrainScore, x.range = c(0.55, 0.65),
                           xlab="Brain-Score: 'V4' score", x.pos.text.label=0.64,
-                          y.axis.max.value=0.69)
+                          y.axis.max.value=0.69,
+                          add.human.plus.minus.result=dataset.name!="noise-generalisation_colour")
   dev.off()
   
   pdf(file=paste(dataset.path, "/", dataset.name, "_kappa_vs_", "BrainScore_IT.pdf", sep=""), 
@@ -390,8 +489,90 @@ for(dataset in DATASET.LIST) {
   plot.consistency.vs.acc(dataset, x.value="IT", plot.names=FALSE,
                           x.axis.dataset = BrainScore, x.range = c(0.45, 0.6),
                           xlab="Brain-Score: 'IT' score", x.pos.text.label=0.58,
-                          y.axis.max.value=0.69)
+                          y.axis.max.value=0.69,
+                          add.human.plus.minus.result=dataset.name!="noise-generalisation_colour")
   dev.off()
+}
+
+###################################################################
+#    ERROR VISUALIZATIONS
+###################################################################
+
+for(dat in list(edgedat, sildat, cueconfdat, colordatcr)) {
+  
+  PLOT.SUBJECTS = subject.factory(dat, PYTORCH.MODELS, distinguish.model.families = TRUE)
+  
+  correctdat = dat[dat$subj=="subject-02", ] # or any other subject
+  correctdat$num.humans.correct = 0
+  correctdat$num.cnns.correct = 0
+  
+  # count # CNNs correct
+  for(subj in PLOT.SUBJECTS) {
+    for(img.id in correctdat$image.id) {
+      if(dat[dat$subj==subj$data.name & dat$image.id==img.id, ]$is.correct) {
+        correctdat[correctdat$image.id==img.id, ]$num.cnns.correct = correctdat[correctdat$image.id==img.id, ]$num.cnns.correct + 1
+      }
+    }
+  }
+  #range(correctdat$num.cnns.correct)
+  
+  # count # humans correct
+  for(subj in unique(dat[dat$is.human==TRUE, ]$subj)) {
+    for(img.id in correctdat$image.id) {
+      if(dat[dat$subj==subj & dat$image.id==img.id, ]$is.correct) {
+        correctdat[correctdat$image.id==img.id, ]$num.humans.correct = correctdat[correctdat$image.id==img.id, ]$num.humans.correct + 1
+      }
+    }
+  }
+  #range(correctdat$num.humans.correct)
+  
+  
+  num.humans = length(unique(dat[dat$is.human, ]$subj))
+  num.cnns = length(PLOT.SUBJECTS)
+  correctdat$human.rank = Inf
+  correctdat$cnn.rank = Inf
+  
+  # stimuli that were easy for humans and hard for CNNs
+  match.rank = 1
+  for(num.hum.correct in range(correctdat$num.humans.correct)[2]:range(correctdat$num.humans.correct)[1]) {
+    for(num.c.correct in range(correctdat$num.cnns.correct)[1]:range(correctdat$num.cnns.correct)[2]) {
+      intersect.dat = correctdat[correctdat$num.humans.correct==num.hum.correct & correctdat$num.cnns.correct==num.c.correct, ]
+      if(nrow(intersect.dat) > 0) { # at least one match found
+        for(img.id in intersect.dat$image.id) {
+          correctdat[correctdat$image.id==img.id, ]$human.rank = match.rank
+          match.rank = match.rank + 1
+        }
+      }
+    }
+  }
+  
+  
+  # stimuli that were easy for CNNs and hard for humans
+  match.rank = 1
+  for(num.c.correct in range(correctdat$num.cnns.correct)[2]:range(correctdat$num.cnns.correct)[1]) {
+    for(num.hum.correct in range(correctdat$num.humans.correct)[1]:range(correctdat$num.humans.correct)[2]) {
+      intersect.dat = correctdat[correctdat$num.humans.correct==num.hum.correct & correctdat$num.cnns.correct==num.c.correct, ]
+      if(nrow(intersect.dat) > 0) { # at least one match found
+        for(img.id in intersect.dat$image.id) {
+          correctdat[correctdat$image.id==img.id, ]$cnn.rank = match.rank
+          match.rank = match.rank + 1
+        }
+      }
+    }
+  }
+  
+  
+  num.imgs.required = 5
+  
+  print(unique(dat$experiment.name))
+  # print image IDs where most humans were correct (and in the case that there are more 
+  # than required, select those images where CNNs performed poorly - i.e., the 'controversial' stimuli)
+  print(correctdat[correctdat$human.rank <= num.imgs.required, ]$image.id)
+  
+  # print image IDs where most CNNs were correct (and in the case that there are more 
+  # than required, select those images where humans performed poorly - i.e., the 'controversial' stimuli)
+  print(correctdat[correctdat$cnn.rank <= num.imgs.required, ]$image.id)
+  
 }
 
 
